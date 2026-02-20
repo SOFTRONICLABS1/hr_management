@@ -35,14 +35,16 @@ export default async function handler(req, res) {
 
     await auth.setCustomUserClaims(userRecord.uid, { role: 'employee' })
 
-    const employeeRef = await db.collection('employees').add({
+    const employeePayload = {
       name: employee.name,
       email: employee.email,
       role: employee.role || 'Staff',
       department: employee.department || 'General',
       status: employee.status || 'Active',
       created_at: new Date().toISOString(),
-    })
+    }
+
+    const employeeRef = await db.collection('employees').add(employeePayload)
 
     await db.collection('users').doc(userRecord.uid).set({
       username,
@@ -51,7 +53,12 @@ export default async function handler(req, res) {
       created_at: new Date().toISOString(),
     })
 
-    res.json({ ok: true, uid: userRecord.uid, employee_id: employeeRef.id })
+    res.json({
+      ok: true,
+      uid: userRecord.uid,
+      employee_id: employeeRef.id,
+      employee: { id: employeeRef.id, ...employeePayload },
+    })
   } catch (err) {
     const status = err.status || 500
     res.status(status).json({ message: err.message || 'Server error' })
