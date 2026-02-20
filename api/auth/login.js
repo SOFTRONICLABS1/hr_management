@@ -37,7 +37,17 @@ export default async function handler(req, res) {
       return
     }
 
-    const permissions = user.permissions || {}
+    const defaultPermissions = {
+      attendance_view: true,
+      leave_apply: true,
+      profile_view: true,
+    }
+    const permissions =
+      user.role === 'employee' ? { ...defaultPermissions, ...(user.permissions || {}) } : user.permissions || {}
+
+    if (user.role === 'employee' && !user.permissions) {
+      await doc.ref.update({ permissions })
+    }
     const token = jwt.sign(
       {
         sub: user.id,
