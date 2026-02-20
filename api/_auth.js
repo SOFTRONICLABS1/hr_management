@@ -1,4 +1,6 @@
-import { getAuth } from './_firebase.js'
+import jwt from 'jsonwebtoken'
+
+const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me'
 
 function getBearerToken(req) {
   const header = req.headers.authorization || ''
@@ -6,29 +8,33 @@ function getBearerToken(req) {
   return header.slice(7)
 }
 
-async function verifyToken(req) {
+function verifyToken(req) {
   const token = getBearerToken(req)
-  if (!token) throw new Error('Missing token')
-  const auth = getAuth()
-  return auth.verifyIdToken(token)
-}
-
-function isBootstrapAdmin(email) {
-  const list = (process.env.BOOTSTRAP_ADMIN_EMAILS || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
-  return list.includes(email)
-}
-
-async function requireAdmin(req) {
-  const decoded = await verifyToken(req)
-  if (decoded.role === 'admin' || isBootstrapAdmin(decoded.email)) {
-    return decoded
+  if (!token) {
+    const error = new Error('Missing token')
+    error.status = 401
+    throw error
   }
-  const error = new Error('Forbidden')
-  error.status = 403
-  throw error
+
+  try {
+    return jwt.verify(token, JWT_SECRET)
+  } catch {
+    const error = new Error('Invalid token')
+    error.status = 401
+    throw error
+  }
 }
 
-export { verifyToken, requireAdmin }
+function requireRole(role) {
+  return (req) => {
+    const payload = verifyToken(req)
+    if (payload.role !== role) {
+      const error = new Error('Forbidden')
+      error.status = 403
+      throw error
+    }
+    return payload
+  }
+}
+
+export { verifyToken, requireRole }

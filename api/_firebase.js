@@ -24,14 +24,9 @@ function getFirebaseApp() {
   return app
 }
 
-function getAuth() {
-  getFirebaseApp()
-  return admin.auth()
-}
-
 function getFirestore() {
   getFirebaseApp()
   return admin.firestore()
 }
 
-export { getAuth, getFirestore }
+export { getFirestore }
