@@ -8,7 +8,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me'
 
 export default async function handler(req, res) {
   if (handleOptions(req, res)) return
-  applyCors(res)
+  applyCors(req, res)
 
   const path = Array.isArray(req.query.path) ? req.query.path.join('/') : ''
 
