@@ -10,7 +10,10 @@ export default async function handler(req, res) {
   if (handleOptions(req, res)) return
   applyCors(req, res)
 
-  const path = Array.isArray(req.query.path) ? req.query.path.join('/') : ''
+  const queryPath = Array.isArray(req.query.path) ? req.query.path.join('/') : req.query.path || ''
+  const urlPath = (req.url || '').split('?')[0] || ''
+  const normalizedUrlPath = urlPath.replace(/^\/api\/?/, '').replace(/^\/+/, '')
+  const path = queryPath || normalizedUrlPath
 
   try {
     if (path === 'health' && req.method === 'GET') {
