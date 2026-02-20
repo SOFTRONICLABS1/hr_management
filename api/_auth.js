@@ -37,4 +37,17 @@ function requireRole(role) {
   }
 }
 
-export { verifyToken, requireRole }
+function requirePermission(permission) {
+  return (req) => {
+    const payload = verifyToken(req)
+    const permissions = payload.permissions || {}
+    if (!permissions[permission]) {
+      const error = new Error('Forbidden')
+      error.status = 403
+      throw error
+    }
+    return payload
+  }
+}
+
+export { verifyToken, requireRole, requirePermission }

@@ -18,6 +18,7 @@ export default function handler(req, res) {
         username: user.username,
         role: user.role,
         employee_id: user.employee_id || null,
+        permissions: user.permissions || {},
       },
     })
   } catch (err) {

@@ -37,8 +37,15 @@ export default async function handler(req, res) {
       return
     }
 
+    const permissions = user.permissions || {}
     const token = jwt.sign(
-      { sub: user.id, username: user.username, role: user.role, employee_id: user.employee_id || null },
+      {
+        sub: user.id,
+        username: user.username,
+        role: user.role,
+        employee_id: user.employee_id || null,
+        permissions,
+      },
       JWT_SECRET,
       { expiresIn: '2h' },
     )
@@ -50,6 +57,7 @@ export default async function handler(req, res) {
         username: user.username,
         role: user.role,
         employee_id: user.employee_id || null,
+        permissions,
       },
     })
   } catch (err) {

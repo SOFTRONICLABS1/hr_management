@@ -20,12 +20,27 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     const snapshot = await db.collection('employees').orderBy('created_at', 'desc').get()
     const rows = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
-    res.json(rows)
+
+    const usersSnap = await db.collection('users').get()
+    const permissionsByEmployee = new Map()
+    usersSnap.docs.forEach((doc) => {
+      const data = doc.data()
+      if (data.employee_id) {
+        permissionsByEmployee.set(data.employee_id, data.permissions || {})
+      }
+    })
+
+    const enriched = rows.map((row) => ({
+      ...row,
+      permissions: permissionsByEmployee.get(row.id) || {},
+    }))
+
+    res.json(enriched)
     return
   }
 
   if (req.method === 'POST') {
-    const { name, email, role, department, status, username, password } = req.body || {}
+    const { name, email, role, department, status, username, password, permissions } = req.body || {}
     if (!name || !email || !role || !department || !status || !username || !password) {
       res.status(400).json({ message: 'Missing fields' })
       return
@@ -54,16 +69,17 @@ export default async function handler(req, res) {
       role: 'employee',
       employee_id: employeeRef.id,
       password_hash,
+      permissions: permissions || {},
       created_at: new Date().toISOString(),
     })
 
-    res.json({ id: employeeRef.id, ...employeePayload })
+    res.json({ id: employeeRef.id, ...employeePayload, permissions: permissions || {} })
     return
   }
 
   if (req.method === 'PUT') {
     const id = req.query.id
-    const { name, email, role, department, status } = req.body || {}
+    const { name, email, role, department, status, permissions } = req.body || {}
     if (!id || !name || !email || !role || !department || !status) {
       res.status(400).json({ message: 'Missing fields' })
       return
@@ -72,7 +88,14 @@ export default async function handler(req, res) {
     const payload = { name, email, role, department, status }
     await db.collection('employees').doc(id).update(payload)
 
-    res.json({ id, ...payload })
+    if (permissions) {
+      const userSnap = await db.collection('users').where('employee_id', '==', id).limit(1).get()
+      if (!userSnap.empty) {
+        await userSnap.docs[0].ref.update({ permissions })
+      }
+    }
+
+    res.json({ id, ...payload, permissions: permissions || {} })
     return
   }
 

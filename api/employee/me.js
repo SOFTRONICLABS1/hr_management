@@ -1,6 +1,6 @@
 import { getFirestore } from '../_firebase.js'
 import { applyCors, handleOptions } from '../_cors.js'
-import { requireRole } from '../_auth.js'
+import { requirePermission } from '../_auth.js'
 
 export default async function handler(req, res) {
   if (handleOptions(req, res)) return
@@ -8,7 +8,7 @@ export default async function handler(req, res) {
 
   let user
   try {
-    user = requireRole('employee')(req)
+    user = requirePermission('profile_view')(req)
   } catch (err) {
     res.status(err.status || 500).json({ message: err.message || 'Server error' })
     return
