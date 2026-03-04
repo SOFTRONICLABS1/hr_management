@@ -169,6 +169,28 @@ app.get('/auth/me', authMiddleware, (req, res) => {
   })
 })
 
+app.post('/auth/change-password', authMiddleware, async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {}
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ message: 'Missing fields' })
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ message: 'New password must be at least 6 characters.' })
+  }
+
+  const user = await get('SELECT id, password_hash FROM users WHERE id = ?', [req.user.sub])
+  if (!user) return res.status(404).json({ message: 'User not found' })
+
+  const ok = await bcrypt.compare(currentPassword, user.password_hash)
+  if (!ok) {
+    return res.status(401).json({ message: 'Current password is incorrect' })
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 10)
+  await run('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, user.id])
+  res.json({ ok: true })
+})
+
 function requireRole(role) {
   return (req, res, next) => {
     if (req.user.role !== role) return res.status(403).json({ message: 'Forbidden' })
@@ -183,9 +205,20 @@ app.get('/employees', authMiddleware, requireRole('admin'), async (_req, res) =>
 })
 
 app.post('/employees', authMiddleware, requireRole('admin'), async (req, res) => {
-  const { name, email, role, department, status } = req.body || {}
+  const { name, email, role, department, status, username, password } = req.body || {}
   if (!name || !email || !role || !department || !status) {
     return res.status(400).json({ message: 'Missing fields' })
+  }
+
+  if (username && !password) {
+    return res.status(400).json({ message: 'Password is required for the user account' })
+  }
+
+  if (username) {
+    const existingUser = await get('SELECT id FROM users WHERE username = ?', [username])
+    if (existingUser) {
+      return res.status(400).json({ message: 'Username already exists' })
+    }
   }
 
   const now = new Date().toISOString()
@@ -194,13 +227,21 @@ app.post('/employees', authMiddleware, requireRole('admin'), async (req, res) =>
     [name, email, role, department, status, now],
   )
 
+  if (username && password) {
+    const passwordHash = await bcrypt.hash(password, 10)
+    await run(
+      'INSERT INTO users (username, password_hash, role, employee_id, created_at) VALUES (?, ?, ?, ?, ?)',
+      [username, passwordHash, 'employee', result.lastID, now],
+    )
+  }
+
   const employee = await get('SELECT * FROM employees WHERE id = ?', [result.lastID])
   res.json(employee)
 })
 
 app.put('/employees/:id', authMiddleware, requireRole('admin'), async (req, res) => {
   const { id } = req.params
-  const { name, email, role, department, status } = req.body || {}
+  const { name, email, role, department, status, reset_password } = req.body || {}
   if (!name || !email || !role || !department || !status) {
     return res.status(400).json({ message: 'Missing fields' })
   }
@@ -209,6 +250,15 @@ app.put('/employees/:id', authMiddleware, requireRole('admin'), async (req, res)
     'UPDATE employees SET name = ?, email = ?, role = ?, department = ?, status = ? WHERE id = ?',
     [name, email, role, department, status, id],
   )
+
+  if (reset_password) {
+    const user = await get('SELECT id FROM users WHERE employee_id = ?', [id])
+    if (!user) {
+      return res.status(404).json({ message: 'Employee user account not found' })
+    }
+    const passwordHash = await bcrypt.hash(reset_password, 10)
+    await run('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, user.id])
+  }
 
   const employee = await get('SELECT * FROM employees WHERE id = ?', [id])
   res.json(employee)
@@ -355,7 +405,7 @@ app.get('/payslips', authMiddleware, requireRole('admin'), async (_req, res) => 
 
 app.post('/payslips', authMiddleware, requireRole('admin'), async (req, res) => {
   const payload = req.body || {}
-  const { employee_id, month } = payload
+  const { employee_id, month, request_id } = payload
   if (!employee_id || !month) {
     return res.status(400).json({ message: 'Employee and month are required.' })
   }
@@ -411,6 +461,15 @@ app.post('/payslips', authMiddleware, requireRole('admin'), async (req, res) => 
   )
 
   const payslip = await get('SELECT * FROM payslips WHERE id = ?', [result.lastID])
+
+  if (request_id) {
+    const nowUpdate = new Date().toISOString()
+    await run(
+      'UPDATE payslip_requests SET status = ?, payslip_id = ?, updated_at = ? WHERE id = ?',
+      ['Generated', payslip.id, nowUpdate, request_id],
+    )
+  }
+
   res.json(payslip)
 })
 
@@ -490,6 +549,34 @@ app.get('/payslips/:id/pdf', authMiddleware, requireRole('admin'), async (req, r
   res.send(Buffer.from(pdfBytes))
 })
 
+// Payslip Requests (Admin)
+app.get('/payslip-requests', authMiddleware, requireRole('admin'), async (_req, res) => {
+  const rows = await all(
+    `SELECT payslip_requests.*, employees.name as employee_name
+     FROM payslip_requests
+     JOIN employees ON payslip_requests.employee_id = employees.id
+     ORDER BY payslip_requests.id DESC`,
+  )
+  res.json(rows)
+})
+
+app.put('/payslip-requests/:id', authMiddleware, requireRole('admin'), async (req, res) => {
+  const { id } = req.params
+  const { status, payslip_id } = req.body || {}
+  if (!status) {
+    return res.status(400).json({ message: 'Missing status' })
+  }
+  const now = new Date().toISOString()
+  await run('UPDATE payslip_requests SET status = ?, payslip_id = ?, updated_at = ? WHERE id = ?', [
+    status,
+    payslip_id || null,
+    now,
+    id,
+  ])
+  const entry = await get('SELECT * FROM payslip_requests WHERE id = ?', [id])
+  res.json(entry)
+})
+
 // Employee self-service
 app.get('/employee/me', authMiddleware, requireRole('employee'), async (req, res) => {
   const employee = await get('SELECT * FROM employees WHERE id = ?', [req.user.employee_id])
@@ -546,6 +633,52 @@ app.delete('/employee/leave/:id', authMiddleware, requireRole('employee'), async
     [id, req.user.employee_id, 'Pending'],
   )
   res.json({ ok: true })
+})
+
+// Employee Payslip Requests + Downloads
+app.get('/employee/payslip-requests', authMiddleware, requireRole('employee'), async (req, res) => {
+  const rows = await all(
+    'SELECT * FROM payslip_requests WHERE employee_id = ? ORDER BY id DESC',
+    [req.user.employee_id],
+  )
+  res.json(rows)
+})
+
+app.post('/employee/payslip-requests', authMiddleware, requireRole('employee'), async (req, res) => {
+  const { month } = req.body || {}
+  if (!month) {
+    return res.status(400).json({ message: 'Month is required' })
+  }
+  const now = new Date().toISOString()
+  const result = await run(
+    'INSERT INTO payslip_requests (employee_id, month, status, created_at) VALUES (?, ?, ?, ?)',
+    [req.user.employee_id, month, 'Pending', now],
+  )
+  const entry = await get('SELECT * FROM payslip_requests WHERE id = ?', [result.lastID])
+  res.json(entry)
+})
+
+app.get('/employee/payslips', authMiddleware, requireRole('employee'), async (req, res) => {
+  const rows = await all(
+    'SELECT * FROM payslips WHERE employee_id = ? ORDER BY id DESC',
+    [req.user.employee_id],
+  )
+  res.json(rows)
+})
+
+app.get('/employee/payslips/:id/pdf', authMiddleware, requireRole('employee'), async (req, res) => {
+  const { id } = req.params
+  const payslip = await get('SELECT * FROM payslips WHERE id = ?', [id])
+  if (!payslip || String(payslip.employee_id) !== String(req.user.employee_id)) {
+    return res.status(404).json({ message: 'Payslip not found.' })
+  }
+
+  const pdfBytes = await buildPayslipPdf(payslip)
+  const safeName = (payslip.name || 'Employee').replace(/[^a-z0-9-_]/gi, '_')
+  const safeMonth = (payslip.month || 'Payslip').replace(/[^a-z0-9-_]/gi, '_')
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `inline; filename="Payslip-${safeName}-${safeMonth}.pdf"`)
+  res.send(Buffer.from(pdfBytes))
 })
 
 initDb()

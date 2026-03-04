@@ -131,6 +131,20 @@ async function initDb() {
     )`,
   )
 
+  await run(
+    `CREATE TABLE IF NOT EXISTS payslip_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL,
+      month TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'Pending',
+      payslip_id INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT,
+      FOREIGN KEY(employee_id) REFERENCES employees(id),
+      FOREIGN KEY(payslip_id) REFERENCES payslips(id)
+    )`,
+  )
+
   try {
     await run("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'")
   } catch {}
@@ -142,6 +156,15 @@ async function initDb() {
   } catch {}
   try {
     await run('ALTER TABLE leave_requests ADD COLUMN description TEXT')
+  } catch {}
+  try {
+    await run("ALTER TABLE payslip_requests ADD COLUMN status TEXT NOT NULL DEFAULT 'Pending'")
+  } catch {}
+  try {
+    await run('ALTER TABLE payslip_requests ADD COLUMN payslip_id INTEGER')
+  } catch {}
+  try {
+    await run('ALTER TABLE payslip_requests ADD COLUMN updated_at TEXT')
   } catch {}
 
   const now = new Date().toISOString()
