@@ -78,6 +78,8 @@ async function initDb() {
       employee_id INTEGER NOT NULL,
       start_date TEXT NOT NULL,
       end_date TEXT NOT NULL,
+      subject TEXT,
+      description TEXT,
       reason TEXT NOT NULL,
       status TEXT NOT NULL,
       created_at TEXT NOT NULL,
@@ -92,11 +94,54 @@ async function initDb() {
     )`,
   )
 
+  await run(
+    `CREATE TABLE IF NOT EXISTS payslips (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL,
+      month TEXT NOT NULL,
+      name TEXT NOT NULL,
+      employee_no TEXT,
+      no_of_days_pay TEXT,
+      location TEXT,
+      no_of_days_in_month TEXT,
+      bank TEXT,
+      location_india_days TEXT,
+      bank_ac_no TEXT,
+      lop TEXT,
+      employee_pan TEXT,
+      employer_pan TEXT,
+      employer_tan TEXT,
+      leaves TEXT,
+      role TEXT,
+      role_designation TEXT,
+      basic_salary REAL,
+      income_tax REAL,
+      house_rent_allowance REAL,
+      professional_tax REAL,
+      conveyance_allowance REAL,
+      medical_allowance REAL,
+      special_allowance REAL,
+      total_income REAL,
+      total_deductions REAL,
+      net_pay REAL,
+      information TEXT,
+      generated_on TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(employee_id) REFERENCES employees(id)
+    )`,
+  )
+
   try {
-    await run('ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT \\'admin\\'')
+    await run("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'")
   } catch {}
   try {
     await run('ALTER TABLE users ADD COLUMN employee_id INTEGER')
+  } catch {}
+  try {
+    await run('ALTER TABLE leave_requests ADD COLUMN subject TEXT')
+  } catch {}
+  try {
+    await run('ALTER TABLE leave_requests ADD COLUMN description TEXT')
   } catch {}
 
   const now = new Date().toISOString()
