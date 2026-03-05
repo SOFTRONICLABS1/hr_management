@@ -36,6 +36,13 @@ function isAllowedOrigin(origin) {
   try {
     const url = new URL(origin)
     const host = url.hostname
+    if (
+      process.env.ALLOW_TRY_CLOUDFLARE === 'true' &&
+      url.protocol === 'https:' &&
+      host.endsWith('.trycloudflare.com')
+    ) {
+      return true
+    }
     const isPrivate =
       host === 'localhost' ||
       host === '127.0.0.1' ||
