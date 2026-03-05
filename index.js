@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import fs from 'fs'
 import path from 'path'
+import os from 'os'
 import { fileURLToPath } from 'url'
 import { PDFDocument, rgb } from 'pdf-lib'
 import fontkit from '@pdf-lib/fontkit'
@@ -11,7 +12,10 @@ import { initDb, get, all, run } from './db.js'
 
 const PORT = process.env.PORT || 4000
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me'
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173'
+const CLIENT_ORIGINS = (process.env.CLIENT_ORIGIN || process.env.CLIENT_ORIGINS || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean)
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -22,7 +26,40 @@ const PAYSLIP_FONT_BYTES = fs.readFileSync(PAYSLIP_FONT_PATH)
 
 const app = express()
 
-app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }))
+const DEV_DEFAULT_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173']
+
+function isAllowedOrigin(origin) {
+  if (!origin) return true
+  const allowed = CLIENT_ORIGINS.length ? CLIENT_ORIGINS : DEV_DEFAULT_ORIGINS
+  if (allowed.includes(origin)) return true
+
+  try {
+    const url = new URL(origin)
+    const host = url.hostname
+    const isPrivate =
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host.startsWith('10.') ||
+      host.startsWith('192.168.') ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)
+    return isPrivate && (!url.port || url.port === '5173')
+  } catch {
+    return false
+  }
+}
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (isAllowedOrigin(origin)) {
+        callback(null, true)
+      } else {
+        callback(new Error('Not allowed by CORS'))
+      }
+    },
+    credentials: true,
+  }),
+)
 app.use(express.json())
 
 function formatNumber(value) {
@@ -681,10 +718,29 @@ app.get('/employee/payslips/:id/pdf', authMiddleware, requireRole('employee'), a
   res.send(Buffer.from(pdfBytes))
 })
 
+function getLanAddresses() {
+  const nets = os.networkInterfaces()
+  const results = []
+  Object.values(nets).forEach((netInfo) => {
+    if (!netInfo) return
+    netInfo.forEach((net) => {
+      if (net.family === 'IPv4' && !net.internal) {
+        results.push(net.address)
+      }
+    })
+  })
+  return results
+}
+
 initDb()
   .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Server listening on http://localhost:${PORT}`)
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server listening on http://0.0.0.0:${PORT}`)
+      const lan = getLanAddresses()
+      if (lan.length) {
+        const urls = lan.map((ip) => `http://${ip}:${PORT}`).join(', ')
+        console.log(`LAN URLs: ${urls}`)
+      }
     })
   })
   .catch((err) => {
